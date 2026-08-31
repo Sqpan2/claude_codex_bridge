@@ -310,6 +310,16 @@ class CcbMobileLocalizations {
 
   String get hostOffline => isChinese ? '离线' : 'Offline';
 
+  String get hostOnline => isChinese ? '在线' : 'Online';
+
+  String get hostConnecting => isChinese ? '连接中' : 'Connecting';
+
+  String hostProjectCount(int count) =>
+      isChinese ? '$count 个项目' : (count == 1 ? '1 project' : '$count projects');
+
+  String get hostNoProjects =>
+      isChinese ? '该电脑暂无项目' : 'No projects on this computer';
+
   String get openTerminal => isChinese ? '打开终端' : 'Open Terminal';
 
   String get computerTerminal => isChinese ? '电脑终端' : 'Computer terminal';

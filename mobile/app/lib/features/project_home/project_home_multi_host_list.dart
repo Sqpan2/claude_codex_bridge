@@ -2,13 +2,13 @@ import 'package:flutter/material.dart';
 
 import '../../app/chat_background.dart';
 import '../../l10n/ccb_mobile_localizations.dart';
-import '../../pairing/gateway_pairing.dart';
 import 'project_home_gateway_profiles.dart';
 import 'project_home_multi_host_projects.dart';
 import 'project_list.dart';
 
-/// Aggregated project list across every paired computer. Each row is tagged with
-/// its owning host so projects that share an id stay distinguishable.
+/// Aggregated project list across every paired computer, grouped into one
+/// section per computer. Each section header names its owning host, so projects
+/// that share an id across computers stay distinguishable.
 class ProjectHomeMultiHostProjectListHost extends StatelessWidget {
   const ProjectHomeMultiHostProjectListHost({
     required this.result,
@@ -119,15 +119,13 @@ class ProjectHomeMultiHostProjectListHost extends StatelessWidget {
     return CcbWorkspaceBackground(child: scaffold);
   }
 
-  /// Renders project rows first, then one row per unreachable computer so a host
-  /// that fails to answer stays visible instead of silently disappearing.
+  /// Renders one section per paired computer: a host header followed by that
+  /// computer's project rows. A host that owns no project, is still connecting,
+  /// or failed to answer keeps its header and shows a placeholder row, so every
+  /// paired computer stays visible instead of silently disappearing.
   Widget _buildBody(CcbMobileLocalizations strings) {
-    final offlineCatalogs = [
-      for (final catalog in result.catalogs)
-        if (catalog.offline) catalog,
-    ];
     final pending = result.catalogs.any((catalog) => catalog.pending);
-    if (result.entries.isEmpty && offlineCatalogs.isEmpty) {
+    if (result.groups.isEmpty) {
       return Center(
         key: const ValueKey('multi-host-project-list-empty'),
         child:
@@ -136,34 +134,92 @@ class ProjectHomeMultiHostProjectListHost extends StatelessWidget {
                 : Text(strings.noCcbProjectsFound),
       );
     }
+    final rows = _buildRows();
     return ListView.separated(
       key: const ValueKey('multi-host-project-list'),
-      itemCount: result.entries.length + offlineCatalogs.length,
-      separatorBuilder: (context, index) => const Divider(height: 1),
+      itemCount: rows.length,
+      // Project rows inside one computer stay divided, while a new host section
+      // gets plain spacing so its header reads as the start of a group.
+      separatorBuilder: (context, index) {
+        return rows[index + 1].kind == _MultiHostRowKind.hostHeader
+            ? const SizedBox(height: 8)
+            : const Divider(height: 1, indent: 16);
+      },
       itemBuilder: (context, index) {
-        if (index >= result.entries.length) {
-          return _OfflineHostListTile(
-            catalog: offlineCatalogs[index - result.entries.length],
-          );
+        final row = rows[index];
+        switch (row.kind) {
+          case _MultiHostRowKind.hostHeader:
+            return _HostGroupHeader(group: row.group);
+          case _MultiHostRowKind.hostPlaceholder:
+            return _HostGroupPlaceholder(group: row.group);
+          case _MultiHostRowKind.hostProject:
+            final entry = row.entry!;
+            return _MultiHostProjectListTile(
+              entry: entry,
+              hasUnreadTaskCompletion: unreadProjectIds.contains(
+                entry.project.id,
+              ),
+              hasWorkingAgents:
+                  entry.project.hasWorkingAgents ||
+                  workingProjectIds.contains(entry.project.id),
+              onOpen: () {
+                onOpenProject(entry);
+              },
+            );
         }
-        final entry = result.entries[index];
-        return _MultiHostProjectListTile(
-          entry: entry,
-          hasUnreadTaskCompletion: unreadProjectIds.contains(entry.project.id),
-          hasWorkingAgents:
-              entry.project.hasWorkingAgents ||
-              workingProjectIds.contains(entry.project.id),
-          onOpen: () {
-            onOpenProject(entry);
-          },
-        );
       },
     );
   }
+
+  /// Flattens the per-computer groups into renderable rows, keeping each group's
+  /// header directly above the rows it owns.
+  List<_MultiHostRow> _buildRows() {
+    return [
+      for (final group in result.groups) ...[
+        _MultiHostRow.header(group),
+        if (group.isEmpty)
+          _MultiHostRow.placeholder(group)
+        else
+          for (final entry in group.entries)
+            _MultiHostRow.project(group: group, entry: entry),
+      ],
+    ];
+  }
 }
 
-/// One aggregated row. Carries a host chip so the owning computer is visible
-/// without opening the project.
+/// Kind of a rendered line in the grouped list.
+enum _MultiHostRowKind { hostHeader, hostProject, hostPlaceholder }
+
+/// One rendered line of the aggregated list: a computer header, one of that
+/// computer's projects, or a placeholder standing in for a computer that owns no
+/// project row. Each line carries the group it belongs to, so the renderer can
+/// draw it without looking back for its owning computer.
+class _MultiHostRow {
+  const _MultiHostRow.header(this.group)
+    : kind = _MultiHostRowKind.hostHeader,
+      entry = null;
+
+  const _MultiHostRow.placeholder(this.group)
+    : kind = _MultiHostRowKind.hostPlaceholder,
+      entry = null;
+
+  /// Project lines always carry their entry, so rendering never has to guard
+  /// against a project row without a project.
+  const _MultiHostRow.project({
+    required this.group,
+    required ProjectHomeHostProject this.entry,
+  }) : kind = _MultiHostRowKind.hostProject;
+
+  final _MultiHostRowKind kind;
+  final ProjectHomeHostGroup group;
+
+  /// Set only for [_MultiHostRowKind.hostProject] lines.
+  final ProjectHomeHostProject? entry;
+}
+
+/// One project row inside a computer's section. The owning computer is carried
+/// by the section header, so the row itself only renders project detail and is
+/// indented to read as a child of that header.
 class _MultiHostProjectListTile extends StatelessWidget {
   const _MultiHostProjectListTile({
     required this.entry,
@@ -188,26 +244,18 @@ class _MultiHostProjectListTile extends StatelessWidget {
       hasWorkingAgents: hasWorkingAgents,
       child: ListTile(
         key: ValueKey('multi-host-project-open-${entry.key}'),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        contentPadding: const EdgeInsets.fromLTRB(24, 8, 16, 8),
         leading: ProjectAttentionAvatar(
           projectId: project.id,
           favorite: project.favorite,
           hasUnreadTaskCompletion: hasUnreadTaskCompletion,
           hasWorkingAgents: hasWorkingAgents,
         ),
-        title: Row(
-          children: [
-            Flexible(
-              child: Text(
-                project.displayName,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.titleMedium,
-              ),
-            ),
-            const SizedBox(width: 8),
-            _HostChip(profile: entry.profile),
-          ],
+        title: Text(
+          project.displayName,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: theme.textTheme.titleMedium,
         ),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -234,66 +282,110 @@ class _MultiHostProjectListTile extends StatelessWidget {
   }
 }
 
-/// Placeholder row for a paired computer that did not answer the catalog
-/// request, so the aggregated list still accounts for every host.
-class _OfflineHostListTile extends StatelessWidget {
-  const _OfflineHostListTile({required this.catalog});
+/// Section header naming the computer that owns the rows below it, together with
+/// its connection state and project count. The name takes the remaining width so
+/// a long computer name ellipsizes instead of overflowing the header row.
+class _HostGroupHeader extends StatelessWidget {
+  const _HostGroupHeader({required this.group});
 
-  final ProjectHomeHostCatalog catalog;
+  final ProjectHomeHostGroup group;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final strings = CcbMobileLocalizations.of(context);
-    return ListTile(
-      key: ValueKey(
-        'multi-host-offline-${projectHomeGatewayProfileKey(catalog.profile)}',
-      ),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      leading: Icon(
-        Icons.cloud_off_outlined,
-        color: theme.colorScheme.onSurfaceVariant,
-      ),
-      title: Text(
-        projectHomeGatewayProfileHostName(catalog.profile),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: theme.textTheme.titleMedium?.copyWith(
-          color: theme.colorScheme.onSurfaceVariant,
-        ),
-      ),
-      subtitle: Text(
-        strings.hostOffline,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: theme.textTheme.bodySmall?.copyWith(
-          color: theme.colorScheme.onSurfaceVariant,
-        ),
+    final colorScheme = theme.colorScheme;
+    final catalog = group.catalog;
+    final offline = catalog.offline;
+    final nameColor = offline ? colorScheme.onSurfaceVariant : null;
+    return Container(
+      key: ValueKey('multi-host-group-header-${group.key}'),
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
+      child: Row(
+        children: [
+          _buildLeading(colorScheme),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              projectHomeGatewayProfileHostName(group.profile),
+              key: ValueKey('multi-host-group-name-${group.key}'),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.titleSmall?.copyWith(color: nameColor),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            _statusLabel(strings),
+            key: ValueKey('multi-host-group-status-${group.key}'),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
       ),
     );
   }
+
+  /// Status glyph of this computer: still contacting, unreachable, or answered.
+  Widget _buildLeading(ColorScheme colorScheme) {
+    final catalog = group.catalog;
+    if (catalog.pending) {
+      return const SizedBox(
+        width: 14,
+        height: 14,
+        child: CircularProgressIndicator(strokeWidth: 2),
+      );
+    }
+    return Icon(
+      catalog.offline ? Icons.cloud_off_outlined : Icons.computer,
+      size: 16,
+      color: colorScheme.onSurfaceVariant,
+    );
+  }
+
+  /// Connection state of this computer, with the project count appended once the
+  /// computer has actually answered with rows.
+  String _statusLabel(CcbMobileLocalizations strings) {
+    final catalog = group.catalog;
+    if (catalog.offline) {
+      return strings.hostOffline;
+    }
+    if (catalog.pending) {
+      return strings.hostConnecting;
+    }
+    return '${strings.hostOnline} · ${strings.hostProjectCount(group.entries.length)}';
+  }
 }
 
-/// Compact label of the computer that owns a project row.
-class _HostChip extends StatelessWidget {
-  const _HostChip({required this.profile});
+/// Placeholder row keeping a computer visible when it owns no project row, so an
+/// unreachable or empty computer still accounts for itself under its header.
+class _HostGroupPlaceholder extends StatelessWidget {
+  const _HostGroupPlaceholder({required this.group});
 
-  final GatewayPairedHost profile;
+  final ProjectHomeHostGroup group;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(10),
-      ),
+    final strings = CcbMobileLocalizations.of(context);
+    final catalog = group.catalog;
+    final label =
+        catalog.offline
+            ? strings.hostOffline
+            : catalog.pending
+            ? strings.hostConnecting
+            : strings.hostNoProjects;
+    return Padding(
+      key: ValueKey('multi-host-group-placeholder-${group.key}'),
+      padding: const EdgeInsets.fromLTRB(24, 4, 16, 12),
       child: Text(
-        projectHomeGatewayProfileHostName(profile),
+        label,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: theme.textTheme.labelSmall?.copyWith(
+        style: theme.textTheme.bodySmall?.copyWith(
           color: theme.colorScheme.onSurfaceVariant,
         ),
       ),
