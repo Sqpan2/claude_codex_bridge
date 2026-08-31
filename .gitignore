@@ -40,3 +40,5 @@ openspec
 *.log
 .hippocampus
 .DS_Store
+# JetBrains IDE 项目配置，不提交
+.idea/
