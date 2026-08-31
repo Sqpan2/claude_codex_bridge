@@ -1,0 +1,74 @@
+# 移动端 APK 调试包构建流水线。
+#
+# 用途：在未配置签名密钥、未发布正式版本的情况下，快速产出一个可直接安装的
+#       debug APK（作为 Actions artifact 下载），用于验证 mobile/app 改动。
+# 说明：正式的签名发布仍走 release-artifacts.yml（推送 v* tag 触发）；本流水线
+#       不发 Release、不需要签名 secrets，与正式发布流程互不影响。
+name: Mobile APK (debug)
+
+on:
+  # 手动触发：可在 Actions 页面选择分支运行；注意 GitHub 仅在“默认分支存在该
+  # 文件”时才显示 Run workflow 按钮，未合入默认分支前请用下方 push 触发。
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "要构建的分支或提交（留空则用当前分支）"
+        required: false
+        default: ""
+  # 推送触发：改动 mobile/app 或本文件时自动构建，便于在 feature 分支即时出包。
+  push:
+    paths:
+      - "mobile/app/**"
+      - ".github/workflows/mobile-apk-debug.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-apk-debug-${{ github.event.inputs.ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-debug-apk:
+    name: Build debug APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref || github.ref }}
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.44.2"
+          cache: true
+
+      - name: Install dependencies
+        working-directory: mobile/app
+        run: flutter pub get
+
+      # 仅作信息性检查：分析失败不阻断出包，便于先拿到可安装的调试包。
+      - name: Analyze (informational)
+        continue-on-error: true
+        working-directory: mobile/app
+        run: flutter analyze
+
+      - name: Build debug APK
+        working-directory: mobile/app
+        run: flutter build apk --debug
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ccb-mobile-debug-apk
+          path: mobile/app/build/app/outputs/flutter-apk/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
