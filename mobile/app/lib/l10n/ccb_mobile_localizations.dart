@@ -346,6 +346,15 @@ class CcbMobileLocalizations {
   String get chooseTerminalProject =>
       isChinese ? '选择项目和终端' : 'Choose a project and terminal';
 
+  String get chooseTerminalHost =>
+      isChinese ? '选择要打开终端的电脑' : 'Choose the computer to open';
+
+  String get hostTerminalScopeMissing =>
+      isChinese ? '未启用终端权限' : 'Terminal access not enabled';
+
+  String get noHostTerminalTargets =>
+      isChinese ? '没有可打开终端的电脑' : 'No computer can open a terminal';
+
   String get windows => isChinese ? '窗口' : 'Windows';
 
   String get agents => isChinese ? 'Agent' : 'Agents';

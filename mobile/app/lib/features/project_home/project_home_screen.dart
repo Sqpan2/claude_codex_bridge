@@ -33,6 +33,7 @@ import '../agent_chat/agent_execution_status.dart';
 import '../terminal/host_terminal_screen.dart';
 import 'project_home_connection_details_panel_host.dart';
 import 'gateway_lan_network_banner.dart';
+import 'home_terminal_host_picker_sheet.dart';
 import 'project_home_focus_coordinator.dart';
 import 'project_home_gateway_profiles.dart';
 import 'project_home_lifecycle_coordinator.dart';
@@ -1150,8 +1151,8 @@ class _ProjectHomeViewState extends State<_ProjectHomeView>
     return ProjectHomeMultiHostProjectListHost(
       result: result,
       onRefreshProjects: _retryMultiHostProjects,
-      // The host terminal belongs to the active gateway: an aggregated list has
-      // no single host to target, so the currently selected one is used.
+      // An aggregated list has no single implied host, so opening a terminal
+      // asks which computer to target first.
       onOpenTerminal: () {
         _openHomeTerminalLauncher(const []);
       },
@@ -2534,6 +2535,12 @@ class _ProjectHomeViewState extends State<_ProjectHomeView>
   }
 
   Future<void> _openHomeTerminalLauncher(List<CcbProject> _) async {
+    // With several computers paired there is no single implied target, so the
+    // owning computer is asked for before a terminal is opened.
+    if (_shouldAggregateHosts) {
+      await _openHostTerminalForChosenHost();
+      return;
+    }
     final strings = CcbMobileLocalizations.of(context);
     final profile = _selectedProfile;
     final transport = _terminalTransport;
@@ -2545,6 +2552,91 @@ class _ProjectHomeViewState extends State<_ProjectHomeView>
     }
     final hostTransport = transport as HostTerminalTransport;
     await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (context) => HostTerminalScreen(transport: hostTransport),
+      ),
+    );
+  }
+
+  /// Asks which paired computer to open, then opens that computer's terminal.
+  /// The chosen host does not have to be the active one: its transport comes from
+  /// the same pool as the project list, so no host switch is needed.
+  Future<void> _openHostTerminalForChosenHost() async {
+    final strings = CcbMobileLocalizations.of(context);
+    final options = _hostTerminalOptions(strings);
+    if (!options.any((option) => option.available)) {
+      _showSnack(strings.noHostTerminalTargets);
+      return;
+    }
+    final profile = await showHomeTerminalHostPickerSheet(
+      context,
+      options: options,
+    );
+    if (profile == null || !mounted) {
+      return;
+    }
+    _openHostTerminalFor(profile);
+  }
+
+  /// Terminal targets for every paired computer, in the same order as the
+  /// aggregated project list. A computer that did not grant terminal access or is
+  /// unreachable is listed as unavailable rather than hidden.
+  List<HomeTerminalHostOption> _hostTerminalOptions(
+    CcbMobileLocalizations strings,
+  ) {
+    return [
+      for (final profile in _distinctHostProfiles)
+        _hostTerminalOption(profile, strings),
+    ];
+  }
+
+  /// Builds one terminal target, resolving its status from the host's catalog so
+  /// the picker reports the same connection state as the project list.
+  HomeTerminalHostOption _hostTerminalOption(
+    GatewayPairedHost profile,
+    CcbMobileLocalizations strings,
+  ) {
+    if (!profile.profile.scopes.contains('host_terminal')) {
+      return HomeTerminalHostOption(
+        profile: profile,
+        statusLabel: strings.hostTerminalScopeMissing,
+        available: false,
+      );
+    }
+    final catalog = _hostCatalogs[projectHomeGatewayProfileKey(profile)];
+    if (catalog != null && catalog.offline) {
+      return HomeTerminalHostOption(
+        profile: profile,
+        statusLabel: strings.hostOffline,
+        available: false,
+      );
+    }
+    final connecting = catalog == null || catalog.pending;
+    return HomeTerminalHostOption(
+      profile: profile,
+      statusLabel: connecting ? strings.hostConnecting : strings.hostOnline,
+    );
+  }
+
+  /// Opens the host terminal of one computer. The active computer reuses the
+  /// live transport, while any other one gets its own from the transport pool.
+  void _openHostTerminalFor(GatewayPairedHost profile) {
+    final strings = CcbMobileLocalizations.of(context);
+    final selected = _selectedProfile;
+    final isActive =
+        selected != null &&
+        projectHomeGatewayProfileKey(selected) ==
+            projectHomeGatewayProfileKey(profile);
+    final transport =
+        isActive
+            ? _terminalTransport
+            : widget.gatewayTerminalTransportFactory(profile);
+    if (transport is! HostTerminalTransport) {
+      _showSnack(strings.hostTerminalAccessUnavailable);
+      return;
+    }
+    final hostTransport = transport as HostTerminalTransport;
+    Navigator.of(context).push<void>(
       MaterialPageRoute(
         builder: (context) => HostTerminalScreen(transport: hostTransport),
       ),
