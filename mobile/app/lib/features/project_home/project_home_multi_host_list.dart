@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../app/chat_background.dart';
 import '../../l10n/ccb_mobile_localizations.dart';
+import '../../pairing/gateway_pairing.dart';
 import 'project_home_gateway_profiles.dart';
 import 'project_home_multi_host_projects.dart';
 import 'project_list.dart';
@@ -16,6 +17,8 @@ class ProjectHomeMultiHostProjectListHost extends StatelessWidget {
     required this.onOpenTerminal,
     required this.onOpenSettings,
     required this.onOpenProject,
+    required this.onRenameHost,
+    this.customHostNames = const {},
     this.unreadProjectIds = const {},
     this.workingProjectIds = const {},
     super.key,
@@ -26,6 +29,14 @@ class ProjectHomeMultiHostProjectListHost extends StatelessWidget {
   final VoidCallback onOpenTerminal;
   final VoidCallback onOpenSettings;
   final ValueChanged<ProjectHomeHostProject> onOpenProject;
+
+  /// Opens the rename flow of one computer, so a group header can carry a name
+  /// the user recognises instead of the identifier the pairing carried.
+  final ValueChanged<GatewayPairedHost> onRenameHost;
+
+  /// Names the user chose for paired computers, keyed by
+  /// [projectHomeCustomHostNameKey].
+  final Map<String, String> customHostNames;
   final Set<String> unreadProjectIds;
   final Set<String> workingProjectIds;
 
@@ -149,7 +160,16 @@ class ProjectHomeMultiHostProjectListHost extends StatelessWidget {
         final row = rows[index];
         switch (row.kind) {
           case _MultiHostRowKind.hostHeader:
-            return _HostGroupHeader(group: row.group);
+            return _HostGroupHeader(
+              group: row.group,
+              customName: projectHomeCustomHostName(
+                customHostNames,
+                row.group.profile,
+              ),
+              onRename: () {
+                onRenameHost(row.group.profile);
+              },
+            );
           case _MultiHostRowKind.hostPlaceholder:
             return _HostGroupPlaceholder(group: row.group);
           case _MultiHostRowKind.hostProject:
@@ -283,12 +303,22 @@ class _MultiHostProjectListTile extends StatelessWidget {
 }
 
 /// Section header naming the computer that owns the rows below it, together with
-/// its connection state and project count. The name takes the remaining width so
-/// a long computer name ellipsizes instead of overflowing the header row.
+/// its connection state, project count, and a rename action. The name takes the
+/// remaining width so a long computer name ellipsizes instead of overflowing the
+/// header row.
 class _HostGroupHeader extends StatelessWidget {
-  const _HostGroupHeader({required this.group});
+  const _HostGroupHeader({
+    required this.group,
+    required this.customName,
+    required this.onRename,
+  });
 
   final ProjectHomeHostGroup group;
+
+  /// Name the user chose for this computer, or null while it still shows the
+  /// name derived from its pairing.
+  final String? customName;
+  final VoidCallback onRename;
 
   @override
   Widget build(BuildContext context) {
@@ -307,7 +337,10 @@ class _HostGroupHeader extends StatelessWidget {
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              projectHomeGatewayProfileHostName(group.profile),
+              projectHomeGatewayProfileHostName(
+                group.profile,
+                customName: customName,
+              ),
               key: ValueKey('multi-host-group-name-${group.key}'),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
@@ -323,6 +356,20 @@ class _HostGroupHeader extends StatelessWidget {
             style: theme.textTheme.labelSmall?.copyWith(
               color: colorScheme.onSurfaceVariant,
             ),
+          ),
+          const SizedBox(width: 4),
+          // Sized down to the status line so renaming stays reachable without
+          // taking width away from the computer name.
+          IconButton(
+            key: ValueKey('multi-host-group-rename-${group.key}'),
+            tooltip: strings.renameHost,
+            onPressed: onRename,
+            padding: EdgeInsets.zero,
+            visualDensity: VisualDensity.compact,
+            constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+            iconSize: 18,
+            color: colorScheme.onSurfaceVariant,
+            icon: const Icon(Icons.drive_file_rename_outline),
           ),
         ],
       ),

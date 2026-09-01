@@ -36,6 +36,7 @@ import 'gateway_lan_network_banner.dart';
 import 'home_terminal_host_picker_sheet.dart';
 import 'project_home_focus_coordinator.dart';
 import 'project_home_gateway_profiles.dart';
+import 'project_home_host_rename_dialog.dart';
 import 'project_home_lifecycle_coordinator.dart';
 import 'mobile_connection_supervisor.dart';
 import 'mobile_presence_coordinator.dart';
@@ -258,6 +259,11 @@ class _ProjectHomeViewState extends State<_ProjectHomeView>
   /// here on its own so a slow computer cannot delay the rest of the list.
   final Map<String, ProjectHomeHostCatalog> _hostCatalogs = {};
 
+  /// Computer names the user chose on this phone, keyed by
+  /// [projectHomeCustomHostNameKey]. Empty until the stored names are read, so a
+  /// host header simply starts from its pairing-derived name.
+  Map<String, String> _customHostNames = const {};
+
   /// Bumped on every aggregated reload so replies from a superseded round are
   /// discarded instead of overwriting fresher catalogs.
   int _hostCatalogsRevision = 0;
@@ -362,6 +368,7 @@ class _ProjectHomeViewState extends State<_ProjectHomeView>
     _activeRepository = widget.repository;
     _viewFuture = _loadActiveProjectView();
     _bootstrapProfiles();
+    unawaited(_loadCustomHostNames());
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         unawaited(_refreshBackgroundConnectionSystemStatus());
@@ -1158,6 +1165,10 @@ class _ProjectHomeViewState extends State<_ProjectHomeView>
       },
       onOpenSettings: _openPairingSettings,
       onOpenProject: _openHostProject,
+      onRenameHost: (profile) {
+        unawaited(_renameHost(profile));
+      },
+      customHostNames: _customHostNames,
       unreadProjectIds: _unreadProjectIds,
       workingProjectIds: _workingProjectIdsFor([
         for (final entry in result.entries) entry.project,
@@ -1167,6 +1178,68 @@ class _ProjectHomeViewState extends State<_ProjectHomeView>
 
   void _retryMultiHostProjects() {
     setState(_refreshMultiHostProjects);
+  }
+
+  /// Reads the computer names stored on this phone. A storage failure is not
+  /// fatal: every host header keeps its pairing-derived name.
+  Future<void> _loadCustomHostNames() async {
+    final names = await _readCustomHostNames();
+    if (names == null || !mounted) {
+      return;
+    }
+    setState(() {
+      _customHostNames = names;
+    });
+  }
+
+  /// Never throws: a phone whose secure storage is unavailable keeps showing the
+  /// pairing-derived computer names instead of failing the aggregated list.
+  Future<Map<String, String>?> _readCustomHostNames() async {
+    try {
+      return await widget.profileStore.listHostNames();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Renames one paired computer. The name is stored on this phone only, because
+  /// pairing carries no computer name that the desktop could be asked to change.
+  /// The header is only repainted once the new name is actually stored.
+  Future<void> _renameHost(GatewayPairedHost profile) async {
+    final strings = CcbMobileLocalizations.of(context);
+    final key = projectHomeCustomHostNameKey(profile);
+    final result = await showProjectHomeHostRenameDialog(
+      context,
+      automaticName: projectHomeGatewayProfileHostName(profile),
+      currentName: _customHostNames[key],
+    );
+    if (result == null || !mounted) {
+      return;
+    }
+    try {
+      await widget.profileStore.writeHostName(
+        hostId: profile.profile.hostId,
+        deviceId: profile.profile.deviceId,
+        name: result.name,
+      );
+    } catch (_) {
+      if (mounted) {
+        _showSnack(strings.hostRenameFailed);
+      }
+      return;
+    }
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      final names = {..._customHostNames};
+      if (result.name == null) {
+        names.remove(key);
+      } else {
+        names[key] = result.name!;
+      }
+      _customHostNames = names;
+    });
   }
 
   /// Opens an aggregated row. A row owned by another computer switches the
@@ -1859,6 +1932,9 @@ class _ProjectHomeViewState extends State<_ProjectHomeView>
     } catch (_) {
       return;
     }
+    // Unpairing drops the computer's stored name, so the header stops offering a
+    // name for a computer this phone no longer knows.
+    unawaited(_loadCustomHostNames());
     if (!_isActiveGatewayProfile(profile)) {
       return;
     }
@@ -2596,10 +2672,12 @@ class _ProjectHomeViewState extends State<_ProjectHomeView>
     GatewayPairedHost profile,
     CcbMobileLocalizations strings,
   ) {
+    final customName = projectHomeCustomHostName(_customHostNames, profile);
     if (!profile.profile.scopes.contains('host_terminal')) {
       return HomeTerminalHostOption(
         profile: profile,
         statusLabel: strings.hostTerminalScopeMissing,
+        customName: customName,
         available: false,
       );
     }
@@ -2608,6 +2686,7 @@ class _ProjectHomeViewState extends State<_ProjectHomeView>
       return HomeTerminalHostOption(
         profile: profile,
         statusLabel: strings.hostOffline,
+        customName: customName,
         available: false,
       );
     }
@@ -2615,6 +2694,7 @@ class _ProjectHomeViewState extends State<_ProjectHomeView>
     return HomeTerminalHostOption(
       profile: profile,
       statusLabel: connecting ? strings.hostConnecting : strings.hostOnline,
+      customName: customName,
     );
   }
 

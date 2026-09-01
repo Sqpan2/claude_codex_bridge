@@ -320,6 +320,22 @@ class CcbMobileLocalizations {
   String get hostNoProjects =>
       isChinese ? '该电脑暂无项目' : 'No projects on this computer';
 
+  String get renameHost => isChinese ? '重命名电脑' : 'Rename computer';
+
+  String get hostNameLabel => isChinese ? '电脑名称' : 'Computer name';
+
+  String get hostNameHelp =>
+      isChinese
+          ? '仅保存在本机，用于区分已配对的多台电脑'
+          : 'Stored on this phone only, to tell paired computers apart';
+
+  String get useAutomaticHostName => isChinese ? '恢复默认' : 'Use default';
+
+  String get save => isChinese ? '保存' : 'Save';
+
+  String get hostRenameFailed =>
+      isChinese ? '无法保存电脑名称' : 'Could not save the computer name';
+
   String get openTerminal => isChinese ? '打开终端' : 'Open Terminal';
 
   String get computerTerminal => isChinese ? '电脑终端' : 'Computer terminal';

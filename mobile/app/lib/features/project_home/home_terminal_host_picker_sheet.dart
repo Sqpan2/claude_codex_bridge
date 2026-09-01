@@ -10,6 +10,7 @@ class HomeTerminalHostOption {
   const HomeTerminalHostOption({
     required this.profile,
     required this.statusLabel,
+    this.customName,
     this.available = true,
   });
 
@@ -17,6 +18,10 @@ class HomeTerminalHostOption {
 
   /// Short connection state of this computer, shown under its name.
   final String statusLabel;
+
+  /// Name the user chose for this computer, or null while it still shows the
+  /// name derived from its pairing.
+  final String? customName;
 
   /// False when this computer cannot open a terminal, either because pairing did
   /// not grant terminal access or because the computer is unreachable.
@@ -112,7 +117,10 @@ class _HostOptionTile extends StatelessWidget {
         color: enabled ? null : colorScheme.onSurfaceVariant,
       ),
       title: Text(
-        projectHomeGatewayProfileHostName(option.profile),
+        projectHomeGatewayProfileHostName(
+          option.profile,
+          customName: option.customName,
+        ),
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),
