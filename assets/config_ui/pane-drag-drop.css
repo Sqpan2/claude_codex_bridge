@@ -1,0 +1,227 @@
+/**
+ * Pane Drag & Drop 样式
+ * 为 CCB Config UI 拖拽功能提供视觉反馈
+ */
+
+/* ============================================================================
+   基础拖拽样式
+   ============================================================================ */
+
+.pane[draggable="true"] {
+  cursor: move;
+  cursor: grab;
+  transition: all 0.15s ease;
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+}
+
+.pane[draggable="true"]:active {
+  cursor: grabbing;
+}
+
+/* ============================================================================
+   拖拽中状态
+   ============================================================================ */
+
+.pane.dragging {
+  opacity: 0.4;
+  cursor: grabbing;
+  transform: scale(0.95);
+  filter: blur(1px);
+}
+
+/* ============================================================================
+   悬停目标状态
+   ============================================================================ */
+
+.pane.drag-over {
+  border-color: var(--blue);
+  box-shadow: inset 0 0 0 2px var(--blue);
+  background: var(--blue-soft);
+  transform: scale(1.02);
+}
+
+/* 暗色主题下的调整 */
+:root[data-ccb-theme="dark"] .pane.drag-over {
+  box-shadow: inset 0 0 0 2px var(--blue), 0 0 12px rgba(137, 180, 250, 0.3);
+}
+
+/* ============================================================================
+   Drop 位置指示器
+   ============================================================================ */
+
+.drop-indicator {
+  position: absolute;
+  background: var(--blue);
+  opacity: 0.7;
+  z-index: 100;
+  pointer-events: none;
+  transition: all 0.12s ease;
+  box-shadow: 0 0 8px rgba(37, 99, 235, 0.5);
+}
+
+/* 暗色主题 */
+:root[data-ccb-theme="dark"] .drop-indicator {
+  background: var(--blue);
+  box-shadow: 0 0 12px rgba(137, 180, 250, 0.6);
+  opacity: 0.8;
+}
+
+/* 垂直指示器（上/下） */
+.drop-indicator.vertical {
+  height: 3px;
+  width: 100%;
+  left: 0;
+  border-radius: 2px;
+}
+
+/* 水平指示器（左/右） */
+.drop-indicator.horizontal {
+  width: 3px;
+  height: 100%;
+  top: 0;
+  border-radius: 2px;
+}
+
+/* 具体位置 */
+.drop-indicator.top {
+  top: -2px;
+}
+
+.drop-indicator.bottom {
+  bottom: -2px;
+}
+
+.drop-indicator.left {
+  left: -2px;
+}
+
+.drop-indicator.right {
+  right: -2px;
+}
+
+/* ============================================================================
+   拖拽动画增强
+   ============================================================================ */
+
+/* 平滑过渡 */
+.layout-node {
+  transition: all 0.2s ease;
+}
+
+/* 拖拽时禁用过渡（更快响应） */
+.layout-node:has(.pane.dragging) {
+  transition: none;
+}
+
+/* ============================================================================
+   禁用拖拽状态
+   ============================================================================ */
+
+.pane[draggable="false"] {
+  cursor: pointer;
+}
+
+.pane.tool[draggable="true"] {
+  cursor: move;
+  opacity: 0.9;
+}
+
+/* Rich tool pane 拖拽提示 */
+.pane.tool.dragging {
+  opacity: 0.5;
+}
+
+/* ============================================================================
+   响应式调整
+   ============================================================================ */
+
+@media (max-width: 860px) {
+  /* 移动端增大触摸区域 */
+  .drop-indicator.vertical {
+    height: 5px;
+  }
+
+  .drop-indicator.horizontal {
+    width: 5px;
+  }
+
+  /* 移动端更明显的拖拽反馈 */
+  .pane.drag-over {
+    transform: scale(1.05);
+  }
+}
+
+/* ============================================================================
+   辅助功能 / 可访问性
+   ============================================================================ */
+
+/* 键盘焦点状态 */
+.pane[draggable="true"]:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+/* 减少动画（用户偏好） */
+@media (prefers-reduced-motion: reduce) {
+  .pane,
+  .drop-indicator,
+  .layout-node {
+    transition: none !important;
+  }
+
+  .pane.dragging {
+    transform: none;
+  }
+
+  .pane.drag-over {
+    transform: none;
+  }
+}
+
+/* ============================================================================
+   拖拽光标兼容性
+   ============================================================================ */
+
+/* Webkit/Blink */
+.pane[draggable="true"]::-webkit-drag-placeholder {
+  opacity: 0;
+}
+
+/* Firefox */
+@-moz-document url-prefix() {
+  .pane.dragging {
+    opacity: 0.3;
+  }
+}
+
+/* ============================================================================
+   高对比度模式支持
+   ============================================================================ */
+
+@media (prefers-contrast: high) {
+  .drop-indicator {
+    opacity: 1;
+    border: 2px solid var(--blue);
+  }
+
+  .pane.drag-over {
+    border-width: 3px;
+  }
+}
+
+/* ============================================================================
+   调试辅助（开发时可启用）
+   ============================================================================ */
+
+/* 取消注释以查看所有可拖拽元素的边界
+.pane[draggable="true"] {
+  outline: 1px dashed rgba(255, 0, 0, 0.3);
+}
+
+.layout-node {
+  outline: 1px dashed rgba(0, 255, 0, 0.3);
+}
+*/
