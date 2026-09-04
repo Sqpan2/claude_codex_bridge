@@ -740,6 +740,107 @@
       left: 0;
     }
 
+    /* ---- pane 拖拽反馈 ---- */
+
+    .pane[draggable="true"] {
+      cursor: grab;
+      transition: all 0.15s ease;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    .pane[draggable="true"]:active {
+      cursor: grabbing;
+    }
+
+    .pane[draggable="true"]:focus-visible {
+      outline: 2px solid var(--blue);
+      outline-offset: 2px;
+    }
+
+    .pane[draggable="false"] {
+      cursor: pointer;
+    }
+
+    .pane.dragging {
+      opacity: 0.4;
+      cursor: grabbing;
+      transform: scale(0.95);
+      filter: blur(1px);
+    }
+
+    .pane.tool.dragging {
+      opacity: 0.5;
+    }
+
+    .pane.drag-over {
+      border-color: var(--blue);
+      box-shadow: inset 0 0 0 2px var(--blue);
+      background: var(--blue-soft);
+      transform: scale(1.02);
+    }
+
+    :root[data-ccb-theme="dark"] .pane.drag-over {
+      box-shadow: inset 0 0 0 2px var(--blue), 0 0 12px rgba(137, 180, 250, 0.3);
+    }
+
+    .drop-indicator {
+      position: absolute;
+      background: var(--blue);
+      opacity: 0.7;
+      z-index: 100;
+      pointer-events: none;
+      transition: all 0.12s ease;
+      box-shadow: 0 0 8px rgba(37, 99, 235, 0.5);
+    }
+
+    :root[data-ccb-theme="dark"] .drop-indicator {
+      box-shadow: 0 0 12px rgba(137, 180, 250, 0.6);
+      opacity: 0.8;
+    }
+
+    .drop-indicator.vertical {
+      height: 3px;
+      width: 100%;
+      left: 0;
+      border-radius: 2px;
+    }
+
+    .drop-indicator.horizontal {
+      width: 3px;
+      height: 100%;
+      top: 0;
+      border-radius: 2px;
+    }
+
+    .drop-indicator.top { top: -2px; }
+    .drop-indicator.bottom { bottom: -2px; }
+    .drop-indicator.left { left: -2px; }
+    .drop-indicator.right { right: -2px; }
+
+    @media (prefers-contrast: high) {
+      .drop-indicator {
+        opacity: 1;
+        border: 2px solid var(--blue);
+      }
+
+      .pane.drag-over {
+        border-width: 3px;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .pane,
+      .drop-indicator {
+        transition: none !important;
+      }
+
+      .pane.dragging,
+      .pane.drag-over {
+        transform: none;
+      }
+    }
+
     .layout-col {
       display: grid;
       gap: 8px;
@@ -1227,7 +1328,6 @@
 
     }
   </style>
-  <link rel="stylesheet" href="pane-drag-drop.css">
 </head>
 <body>
   <div class="app">
@@ -2855,7 +2955,13 @@ main = "demo:codex"
           return text;
         }
         // 分支节点：把 effectiveAtN 继续下传给它内部的宿主叶子
-        return renderLayoutNode(childNode, effectiveAtN);
+        let text = renderLayoutNode(childNode, effectiveAtN);
+        // `,`(vertical) 比 `;`(horizontal) 结合更紧，所以竖向组里的横向子组
+        // 必须加括号，否则它的 `;` 会在上层被切开，拓扑被解析成另一种布局。
+        if (node.kind === "vertical" && childNode.kind === "horizontal") {
+          text = `(${text})`;
+        }
+        return text;
       });
 
       return parts.join(separator);
