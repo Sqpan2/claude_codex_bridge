@@ -70,6 +70,20 @@ bottom_height = 20
 """
 
 
+ADD_NAMED_SHELL_WINDOW_CONFIG = """version = 2
+entry_window = "main"
+
+[windows]
+main = "agent1:codex, agent2:claude"
+shells = "agent3:codex, shell; shell2"
+
+[ui.sidebar]
+mode = "every_window"
+width = "15%"
+bottom_height = 20
+"""
+
+
 @dataclass
 class _PatchFakeBackend:
     socket_path: str | None = None
@@ -786,6 +800,50 @@ def test_apply_add_window_materializes_rich_alias_as_tool_pane(tmp_path: Path, m
     assert backend.pane_options['%5']['@ccb_window'] == 'review'
     assert 'rich' not in result.agent_panes
     assert result.preserved_after == {'agent1': '%1', 'agent2': '%2'}
+
+
+def test_apply_add_window_materializes_named_shells_as_distinct_tool_panes(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    current = _load_config(tmp_path / 'current-named-shells', BASE_CONFIG)
+    new = _load_config(tmp_path / 'new-named-shells', ADD_NAMED_SHELL_WINDOW_CONFIG)
+    project_root = _project(tmp_path / 'repo-named-shells', BASE_CONFIG)
+    layout = PathLayout(project_root)
+    backend = _PatchFakeBackend(socket_path=str(layout.ccbd_tmux_socket_path))
+    backend.add_window(layout.ccbd_tmux_session_name, 'main')
+    backend.sessions[layout.ccbd_tmux_session_name][0]['panes'].append('%2')
+    backend.pane_counter = 2
+    _seed_agent_pane(backend, '%1', project_id='proj-1', window='main', agent='agent1')
+    _seed_agent_pane(backend, '%2', project_id='proj-1', window='main', agent='agent2')
+    _store_namespace(layout, project_id='proj-1')
+    controller = ProjectNamespaceController(
+        layout,
+        'proj-1',
+        clock=lambda: '2026-05-29T00:00:00Z',
+        backend_factory=lambda socket_path=None: backend,
+    )
+    _forbid_recreate_paths(monkeypatch)
+    plan = build_reload_dry_run_plan(
+        current,
+        new,
+        project_id='proj-1',
+        current_namespace=controller.load(),
+    )
+
+    result = controller.apply_additive_patch(
+        patch_plan=plan['namespace_patch_plan'],
+        old_topology=build_namespace_topology_plan(current),
+        new_topology=build_namespace_topology_plan(new),
+        timeout_s=0.0,
+    )
+
+    assert result.status == 'applied'
+    assert set(result.tool_panes) == {'shell', 'shell2'}
+    respawn_commands = dict(backend.respawn_calls)
+    for alias, pane_id in result.tool_panes.items():
+        assert respawn_commands[pane_id] == 'exec "${SHELL:-/bin/sh}"'
+        assert backend.pane_options[pane_id]['@ccb_slot'] == f'tool:{alias}'
 
 
 def test_preserved_snapshot_and_assertion_use_fake_identity_data(tmp_path: Path) -> None:

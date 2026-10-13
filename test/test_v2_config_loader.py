@@ -2140,6 +2140,43 @@ def test_native_windows_shell_aliases_launch_the_requested_shell() -> None:
     assert not is_native_windows_only_layout_tool_alias('rich')
 
 
+def test_load_project_config_supports_multiple_named_shell_panes(tmp_path: Path) -> None:
+    from agents.models import layout_tool_alias_command, layout_tool_alias_label
+
+    project_root = tmp_path / 'repo-named-shell-panes'
+    _write(
+        project_root / '.ccb' / 'ccb.config',
+        '''version = 2
+
+[windows]
+main = "agent1:codex, shell; shell2, shell-build"
+''',
+    )
+
+    result = load_project_config(project_root)
+
+    assert result.config.windows[0].agent_names == ('agent1',)
+    assert result.config.windows[0].tool_names == ('shell', 'shell2', 'shell-build')
+    for alias in result.config.windows[0].tool_names:
+        assert layout_tool_alias_command(alias) == 'exec "${SHELL:-/bin/sh}"'
+        assert layout_tool_alias_label(alias) == alias
+
+
+def test_load_project_config_rejects_duplicate_named_shell_panes(tmp_path: Path) -> None:
+    project_root = tmp_path / 'repo-duplicate-named-shell-panes'
+    _write(
+        project_root / '.ccb' / 'ccb.config',
+        '''version = 2
+
+[windows]
+main = "agent1:codex, shell2; shell2"
+''',
+    )
+
+    with pytest.raises(ConfigValidationError, match='duplicate tool alias in windows.main: shell2'):
+        load_project_config(project_root)
+
+
 @pytest.mark.parametrize('alias', ['pwsh', 'powershell', 'bash', 'wincmd'])
 def test_load_project_config_rejects_native_windows_shell_alias_off_native_windows(
     monkeypatch: pytest.MonkeyPatch,

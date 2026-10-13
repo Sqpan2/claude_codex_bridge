@@ -2768,6 +2768,24 @@ main = "demo:codex"
         .map((leaf) => leaf.name);
     }
 
+    function windowPaneNames(windowItem = selectedWindow(), excludedLeaf = null) {
+      return windowItem
+        ? collectLeaves(windowItem.tree).filter((leaf) => leaf !== excludedLeaf).map((leaf) => leaf.name)
+        : [];
+    }
+
+    function isShellPaneName(value) {
+      return /^shell(?:[0-9]+|[-_.][a-z0-9][a-z0-9_.-]*)?$/.test(String(value || "").toLowerCase());
+    }
+
+    function uniqueShellName(excludedLeaf = null) {
+      const names = new Set(windowPaneNames(selectedWindow(), excludedLeaf));
+      if (!names.has("shell")) return "shell";
+      let index = 2;
+      while (names.has(`shell${index}`)) index += 1;
+      return `shell${index}`;
+    }
+
     function uniqueAgentName(prefix = "agent") {
       const names = new Set(allAgentNames());
       let index = 1;
@@ -3119,8 +3137,11 @@ main = "demo:codex"
         container.innerHTML = `<h2 class="panel-title">${t("selectedPane")}</h2>`;
         return;
       }
-      const isRich = !leaf.provider || leaf.name === "rich";
-      const overlay = isRich ? {} : overlayFor(leaf.name);
+      const isTool = !leaf.provider;
+      const isRich = isTool && leaf.name === "rich";
+      const isShell = isTool && isShellPaneName(leaf.name);
+      const aliasName = leaf.provider ? null : (leaf.name || "rich");
+      const overlay = isTool ? {} : overlayFor(leaf.name);
       const capability = providerCapability(leaf.provider) || { models: [], model_shortcut: false };
       const providers = [...new Set([leaf.provider, ...providerCapabilities.providers.map((item) => item.id)].filter(Boolean))];
       const models = Array.isArray(capability.models) ? capability.models : [];
@@ -3136,21 +3157,22 @@ main = "demo:codex"
         <label class="field">
           <span class="label">${t("paneType")}</span>
           <select class="select" data-field="paneType">
-            <option value="agent" ${isRich ? "" : "selected"}>${t("agent")}</option>
+            <option value="agent" ${isTool ? "" : "selected"}>${t("agent")}</option>
             <option value="rich" ${isRich ? "selected" : ""} ${!visualState.rich_available && !isRich ? "disabled" : ""}>Rich</option>
+            <option value="shell" ${isShell ? "selected" : ""}>Shell</option>
           </select>
           <span class="field-note">${visualState.rich_available ? t("richAvailableNote") : t("richUnavailableNote")}</span>
         </label>
         <div class="field-row">
-          <label class="field"><span class="label">${t("agentName")}</span><input class="input" data-field="name" value="${escapeAttribute(isRich ? "rich" : leaf.name)}" ${isRich ? "disabled" : ""}></label>
-          <label class="field"><span class="label">${t("workspace")}</span><select class="select" data-field="workspace" ${isRich ? "disabled" : ""}><option value="inplace" ${leaf.workspace_mode !== "worktree" ? "selected" : ""}>inplace</option><option value="worktree" ${leaf.workspace_mode === "worktree" ? "selected" : ""}>worktree</option></select></label>
+          <label class="field"><span class="label">${t("agentName")}</span><input class="input" data-field="name" value="${escapeAttribute(aliasName || leaf.name)}" ${isRich ? "disabled" : ""}></label>
+          <label class="field"><span class="label">${t("workspace")}</span><select class="select" data-field="workspace" ${isTool ? "disabled" : ""}><option value="inplace" ${leaf.workspace_mode !== "worktree" ? "selected" : ""}>inplace</option><option value="worktree" ${leaf.workspace_mode === "worktree" ? "selected" : ""}>worktree</option></select></label>
         </div>
         <div class="field-row">
-          <label class="field"><span class="label">${t("provider")}</span><select class="select provider-select" data-field="provider" ${isRich ? "disabled" : ""}>${providers.map((provider) => `<option value="${escapeAttribute(provider)}" ${provider === leaf.provider ? "selected" : ""}>${escapeHtml(provider)}</option>`).join("")}</select></label>
-          <label class="field"><span class="label">${t("rolePack")}</span><input class="input" data-field="role" list="${roleListId}" value="${escapeAttribute(role)}" placeholder="none" ${isRich ? "disabled" : ""}><datalist id="${roleListId}">${roleCatalogOptions(role)}</datalist></label>
+          <label class="field"><span class="label">${t("provider")}</span><select class="select provider-select" data-field="provider" ${isTool ? "disabled" : ""}>${providers.map((provider) => `<option value="${escapeAttribute(provider)}" ${provider === leaf.provider ? "selected" : ""}>${escapeHtml(provider)}</option>`).join("")}</select></label>
+          <label class="field"><span class="label">${t("rolePack")}</span><input class="input" data-field="role" list="${roleListId}" value="${escapeAttribute(role)}" placeholder="none" ${isTool ? "disabled" : ""}><datalist id="${roleListId}">${roleCatalogOptions(role)}</datalist></label>
         </div>
         <div class="field-row">
-          <label class="field"><span class="label">${t("model")}</span><select class="select model-select" data-field="model" ${isRich || (!capability.model_shortcut && !models.length) ? "disabled" : ""}><option value="inherit">${t("inherit")}</option>${models.map((item) => `<option value="${escapeAttribute(item.id)}" ${item.id === model ? "selected" : ""}>${escapeHtml(item.label || item.id)}</option>`).join("")}${model !== "inherit" && !models.some((item) => item.id === model) ? `<option value="${escapeAttribute(model)}" selected>${escapeHtml(model)}</option>` : ""}${capability.custom_model ? `<option value="__custom__">${t("customModel")}</option>` : ""}</select></label>
+          <label class="field"><span class="label">${t("model")}</span><select class="select model-select" ${isTool || (!capability.model_shortcut && !models.length) ? "disabled" : ""} data-field="model"><option value="inherit">${t("inherit")}</option>${models.map((item) => `<option value="${escapeAttribute(item.id)}" ${item.id === model ? "selected" : ""}>${escapeHtml(item.label || item.id)}</option>`).join("")}${model !== "inherit" && !models.some((item) => item.id === model) ? `<option value="${escapeAttribute(model)}" selected>${escapeHtml(model)}</option>` : ""}${capability.custom_model ? `<option value="__custom__">${t("customModel")}</option>` : ""}</select></label>
           <label class="field"><span class="label">${t("thinking")}</span><select class="select thinking-select" data-field="thinking" data-current="${escapeAttribute(thinking)}" disabled><option value="inherit">${t("inherit")}</option></select></label>
         </div>
         <p class="field-note model-capability-note">${capability.model_shortcut ? tf("modelSourceSupported", { source: capability.model_source || "catalog" }) : t("modelShortcutUnavailable")}</p>
@@ -3158,15 +3180,15 @@ main = "demo:codex"
           <summary>${t("apiOverride")}</summary>
           <div class="details-body api-grid">
             <p class="field-note wide">${apiSupported ? t("apiOverrideNote") : t("apiShortcutUnavailable")}</p>
-            <label class="field"><span class="label">${t("apiKey")}</span><input class="input" data-field="key" type="password" placeholder="${keyConfigured ? "configured · enter to replace" : "$API_KEY"}" ${isRich || !apiSupported ? "disabled" : ""}></label>
-            <label class="field"><span class="label">${t("baseUrl")}</span><input class="input" data-field="url" value="${escapeAttribute(overlay.url || "")}" placeholder="https://api.example/v1" ${isRich || !apiSupported ? "disabled" : ""}></label>
+            <label class="field"><span class="label">${t("apiKey")}</span><input class="input" data-field="key" type="password" placeholder="${keyConfigured ? "configured · enter to replace" : "$API_KEY"}" ${isTool || !apiSupported ? "disabled" : ""}></label>
+            <label class="field"><span class="label">${t("baseUrl")}</span><input class="input" data-field="url" value="${escapeAttribute(overlay.url || "")}" placeholder="https://api.example/v1" ${isTool || !apiSupported ? "disabled" : ""}></label>
           </div>
         </details>
         <details>
           <summary>${t("advancedOverlay")}</summary>
           <div class="details-body">
-            <label class="field"><span class="label">startup_args</span><input class="input" data-field="startup_args" value="${escapeAttribute(startupArgs)}" ${isRich ? "disabled" : ""}></label>
-            <label class="field"><span class="label">workspace_group</span><input class="input" data-field="workspace_group" value="${escapeAttribute(overlay.workspace_group || "")}" ${isRich ? "disabled" : ""}></label>
+            <label class="field"><span class="label">startup_args</span><input class="input" data-field="startup_args" value="${escapeAttribute(startupArgs)}" ${isTool ? "disabled" : ""}></label>
+            <label class="field"><span class="label">workspace_group</span><input class="input" data-field="workspace_group" value="${escapeAttribute(overlay.workspace_group || "")}" ${isTool ? "disabled" : ""}></label>
           </div>
         </details>`;
       syncThinking(container, capability, model);
@@ -3221,8 +3243,9 @@ main = "demo:codex"
       const field = (name) => container.querySelector(`[data-field="${name}"]`);
       field("paneType").addEventListener("change", (event) => mutateVisual(() => {
         const previousName = leaf.name;
-        if (event.target.value === "rich") {
-          Object.assign(leaf, { name: "rich", provider: null, workspace_mode: "inplace", percent: leaf.percent ?? null });
+        if (event.target.value === "rich" || event.target.value === "shell") {
+          const toolName = event.target.value === "shell" ? uniqueShellName(leaf) : "rich";
+          Object.assign(leaf, { name: toolName, provider: null, workspace_mode: "inplace", percent: leaf.percent ?? null });
           if (visualState.document.agents) delete visualState.document.agents[previousName];
         } else if (!leaf.provider) {
           Object.assign(leaf, { name: uniqueAgentName(), provider: "codex", workspace_mode: "inplace", percent: leaf.percent ?? null });
@@ -3230,8 +3253,11 @@ main = "demo:codex"
       }));
       field("name").addEventListener("change", (event) => {
         const nextName = event.target.value.trim().toLowerCase();
-        const duplicate = allAgentNames().some((name) => name === nextName && name !== leaf.name);
-        if (!validConfigName(nextName) || duplicate) {
+        const duplicate = leaf.provider
+          ? allAgentNames().some((name) => name === nextName && name !== leaf.name)
+          : windowPaneNames(selectedWindow(), leaf).includes(nextName);
+        const validForPane = leaf.provider ? validConfigName(nextName) : isShellPaneName(nextName);
+        if (!validForPane || duplicate) {
           window.alert(t("invalidAgentName"));
           renderVisualEditors();
           return;

@@ -162,6 +162,14 @@ def test_config_ui_layout_canvas_can_fill_stretched_workspace_column() -> None:
     assert 'max-height: none' in preview_rule
 
 
+def test_config_ui_supports_multiple_named_shell_panes() -> None:
+    page = config_ui_asset_path().read_text(encoding='utf-8')
+
+    assert 'function uniqueShellName(excludedLeaf = null)' in page
+    assert 'event.target.value === "shell" ? uniqueShellName(leaf) : "rich"' in page
+    assert 'const validForPane = leaf.provider ? validConfigName(nextName) : isShellPaneName(nextName);' in page
+
+
 def test_config_ui_serves_token_guarded_page_and_project_session(tmp_path: Path) -> None:
     project_root = tmp_path / 'repo'
     config_path = project_root / '.ccb' / 'ccb.config'
