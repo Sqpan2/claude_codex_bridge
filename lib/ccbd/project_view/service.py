@@ -678,6 +678,22 @@ def build_project_view(
         )
         for order, agent_name in enumerate(_agent_order(deps.config))
     ]
+    # Layout tool panes (the cross-platform `shell` alias, `rich`) are not
+    # agents, but mobile reaches every pane through the agent list. Append them
+    # after the configured agents so a phone can open a terminal on one without
+    # any app change. They carry no `activity_state`, which is what keeps them
+    # out of unread badges, working counts, and push notifications.
+    agents.extend(
+        _layout_tool_pane_view(
+            window_name=window_name,
+            alias=alias,
+            pane_id=pane_id,
+            order=len(agents) + offset,
+        )
+        for offset, (window_name, alias, pane_id) in enumerate(
+            _layout_tool_pane_rows(deps.config, tmux_snapshot)
+        )
+    )
 
     return {
         'schema_version': PROJECT_VIEW_SCHEMA_VERSION,
@@ -798,6 +814,55 @@ def _record_project_view_sidebar_refresh(metrics, *, refresh_started: float, suc
             int(getattr(metrics, 'project_view_sidebar_refresh_failures', 0) or 0) + 1
         )
     metrics.last_project_view_sidebar_refresh_duration_s = max(0.0, monotonic() - refresh_started)
+
+
+def _layout_tool_pane_rows(config, tmux_snapshot) -> tuple[tuple[str, str, str | None], ...]:
+    """``(window, tool_alias, pane_id)`` for every configured layout tool pane."""
+    facts_by_window = tmux_snapshot if isinstance(tmux_snapshot, dict) else {}
+    rows: list[tuple[str, str, str | None]] = []
+    for window in tuple(getattr(config, 'windows', ()) or ()):
+        window_name = str(getattr(window, 'name', '') or '')
+        if not window_name:
+            continue
+        window_facts = facts_by_window.get(window_name)
+        tool_pane_ids = (
+            window_facts.get('tool_pane_ids') if isinstance(window_facts, dict) else None
+        )
+        for alias in tuple(getattr(window, 'tool_names', ()) or ()):
+            pane_id = (
+                tool_pane_ids.get(str(alias)) if isinstance(tool_pane_ids, dict) else None
+            )
+            rows.append((window_name, str(alias), str(pane_id) if pane_id else None))
+    return tuple(rows)
+
+
+def _layout_tool_pane_view(
+    *,
+    window_name: str,
+    alias: str,
+    pane_id: str | None,
+    order: int,
+) -> dict[str, object]:
+    """Present a provider-less layout tool pane as a read-mostly agent row.
+
+    Deliberately omits ``activity_state``: every activity and notification
+    consumer skips rows without it, so a tool pane never raises unread state,
+    working counts, or pushes. ``pane_id`` is what mobile's terminal target
+    resolution needs in order to attach; absent tmux evidence it is simply
+    omitted and the row stays informational.
+    """
+    row: dict[str, object] = {
+        'name': alias,
+        'provider': 'tool',
+        'window': window_name,
+        'order': order,
+        'active': False,
+        'queue_depth': 0,
+        'kind': 'tool',
+    }
+    if pane_id:
+        row['pane_id'] = pane_id
+    return row
 
 
 def _agent_view(
@@ -1558,6 +1623,29 @@ def _collect_tmux_project_view_facts(context: _ProjectViewBuildContext) -> tuple
         ],
         metrics_context=context.metrics_context,
     )
+    # Layout tool panes (the cross-platform `shell` alias, `rich`, ...) are not
+    # agents, so they own no registry runtime to source a pane id from. Only
+    # ask tmux when the topology actually declares one, so projects without tool
+    # panes keep their existing number of tmux round trips.
+    tool_panes_cp = (
+        _tmux_run_best_effort(
+            backend,
+            [
+                'list-panes',
+                '-a',
+                '-F',
+                '#{session_name}\t#{window_name}\t#{pane_id}\t#{@ccb_project_id}\t#{@ccb_role}\t#{@ccb_slot}',
+            ],
+            metrics_context=context.metrics_context,
+        )
+        if _config_declares_layout_tools(context.deps.config)
+        else None
+    )
+    tool_panes = _parse_tool_panes_stdout(
+        str(getattr(tool_panes_cp, 'stdout', '') or '') if tool_panes_cp is not None else '',
+        session_name=str(namespace.tmux_session_name or ''),
+        project_id=str(context.deps.project_id or ''),
+    )
     parsed = _parse_tmux_project_view_outputs(
         focus_stdout=str(getattr(focus_cp, 'stdout', '') or '') if focus_cp is not None else '',
         windows_stdout=str(getattr(windows_cp, 'stdout', '') or '') if windows_cp is not None else '',
@@ -1583,6 +1671,10 @@ def _collect_tmux_project_view_facts(context: _ProjectViewBuildContext) -> tuple
         if not isinstance(window_name, str):
             continue
         result.setdefault(window_name, {})['sidebar_pane_id'] = pane_id
+    for window_name, pane_ids in tool_panes.items():
+        if not isinstance(window_name, str) or not pane_ids:
+            continue
+        result.setdefault(window_name, {})['tool_pane_ids'] = pane_ids
     return dict(focus), result
 
 
@@ -1700,6 +1792,45 @@ def _parse_sidebars_stdout(stdout: str, *, session_name: str, project_id: str) -
         if resolved_window is None or resolved_window in result:
             continue
         result[resolved_window] = pane_id
+    return result
+
+
+def _config_declares_layout_tools(config) -> bool:
+    """True when any `[windows]` layout declares a provider-less tool alias."""
+    for window in tuple(getattr(config, 'windows', ()) or ()):
+        if tuple(getattr(window, 'tool_names', ()) or ()):
+            return True
+    return False
+
+
+def _parse_tool_panes_stdout(
+    stdout: str,
+    *,
+    session_name: str,
+    project_id: str,
+) -> dict[str, dict[str, str]]:
+    """Collect ``{window: {tool_alias: pane_id}}`` for layout tool panes.
+
+    Tool panes are not agents, so the runtime registry holds no pane binding for
+    them. Their pane identity carries the alias in ``@ccb_slot`` as
+    ``tool:<alias>``; mobile needs the raw pane id to open a terminal on one.
+    """
+    result: dict[str, dict[str, str]] = {}
+    for line in (stdout or '').splitlines():
+        parts = line.split('\t')
+        if len(parts) != 6:
+            continue
+        session, window_name, pane_id, pane_project_id, role, slot = (
+            _clean_text(item) for item in parts
+        )
+        if session != session_name or pane_project_id != project_id or role != 'tool':
+            continue
+        if pane_id is None or not pane_id.startswith('%') or window_name is None:
+            continue
+        alias = (slot or '').split(':', 1)[-1].strip().lower()
+        if not alias:
+            continue
+        result.setdefault(window_name, {})[alias] = pane_id
     return result
 
 

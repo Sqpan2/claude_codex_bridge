@@ -187,6 +187,10 @@ LAYOUT_TOOL_ALIASES: dict[str, dict[str, str]] = {
         'label': 'rich',
         'command': 'CCB_WORKBENCH_PROFILE=rich CCB_WORKBENCH_FORCE_RICH=1 ccb-workbench files',
     },
+    # Cross-platform interactive shell pane. Unlike the native-Windows-only
+    # shell aliases below, this resolves the user's login shell so it works on
+    # macOS/Linux/WSL. POSIX-oriented: $SHELL is unset on native Windows.
+    'shell': {'label': 'shell', 'command': 'exec "${SHELL:-/bin/sh}"'},
     # Native-Windows-only shell panes: hold an interactive shell prompt with no
     # coding CLI. Each alias `exec`s the chosen shell so it replaces the sh
     # wrapper herdr uses to launch pane commands. `wincmd` avoids the reserved
@@ -196,6 +200,11 @@ LAYOUT_TOOL_ALIASES: dict[str, dict[str, str]] = {
     'bash': {'label': 'bash', 'command': 'exec bash'},
     'wincmd': {'label': 'wincmd', 'command': 'exec cmd'},
 }
+
+# Named shell panes keep the layout DSL backwards compatible while allowing a
+# window to contain more than one shell.  The instance name remains the pane's
+# stable slot key; all instances resolve to the built-in ``shell`` tool.
+_SHELL_LAYOUT_TOOL_ALIAS_RE = re.compile(r'^shell(?:[0-9]+|[-_.][a-z0-9][a-z0-9_.-]*)?$')
 
 # Aliases usable only on native Windows (not WSL/Linux/macOS). Recognized as
 # aliases on every platform so callers can emit a precise "native Windows only"
@@ -207,13 +216,14 @@ NATIVE_WINDOWS_ONLY_LAYOUT_TOOL_ALIASES: frozenset[str] = frozenset(
 
 def normalize_layout_tool_alias(value: object) -> str:
     name = str(value or '').strip().lower()
-    if name not in LAYOUT_TOOL_ALIASES:
+    if name not in LAYOUT_TOOL_ALIASES and not _SHELL_LAYOUT_TOOL_ALIAS_RE.fullmatch(name):
         raise AgentValidationError(f'unknown layout tool alias: {value!r}')
     return name
 
 
 def is_layout_tool_alias(value: object) -> bool:
-    return str(value or '').strip().lower() in LAYOUT_TOOL_ALIASES
+    name = str(value or '').strip().lower()
+    return name in LAYOUT_TOOL_ALIASES or _SHELL_LAYOUT_TOOL_ALIAS_RE.fullmatch(name) is not None
 
 
 def is_native_windows_only_layout_tool_alias(value: object) -> bool:
@@ -221,11 +231,20 @@ def is_native_windows_only_layout_tool_alias(value: object) -> bool:
 
 
 def layout_tool_alias_command(value: object) -> str:
-    return LAYOUT_TOOL_ALIASES[normalize_layout_tool_alias(value)]['command']
+    name = normalize_layout_tool_alias(value)
+    definition = (
+        LAYOUT_TOOL_ALIASES['shell']
+        if _SHELL_LAYOUT_TOOL_ALIAS_RE.fullmatch(name)
+        else LAYOUT_TOOL_ALIASES[name]
+    )
+    return definition['command']
 
 
 def layout_tool_alias_label(value: object) -> str:
-    return LAYOUT_TOOL_ALIASES[normalize_layout_tool_alias(value)]['label']
+    name = normalize_layout_tool_alias(value)
+    if _SHELL_LAYOUT_TOOL_ALIAS_RE.fullmatch(name):
+        return name
+    return LAYOUT_TOOL_ALIASES[name]['label']
 
 
 @dataclass(frozen=True)
