@@ -1712,7 +1712,7 @@ model = "gpt-5.5"</pre>
         delete: "Delete",
         paneType: "Pane type",
         agent: "Agent",
-        richAvailableNote: "Rich available · not ask target; disable this option when the package is missing.",
+        richAvailableNote: "Rich tool pane · not an ask target.",
         workspace: "Workspace",
         provider: "Provider",
         rolePack: "RolePack",
@@ -1848,7 +1848,7 @@ model = "gpt-5.5"</pre>
         sidebarWidth: "Width",
         enabled: "enabled",
         disabled: "disabled",
-        richUnavailableNote: "Rich is not installed in this environment and cannot be selected.",
+        richUnavailableNote: "Rich workbench is not installed. You can still select it, but the pane will not launch until you run `ccb update rich`.",
         apiShortcutUnavailable: "This provider does not support per-agent API key/URL shortcuts.",
         profileSaved: "Config profile saved",
         profileLoaded: "Config profile loaded as an inactive draft",
@@ -1987,7 +1987,7 @@ model = "gpt-5.5"</pre>
         delete: "删除",
         paneType: "分屏类型",
         agent: "Agent",
-        richAvailableNote: "Rich 已安装 · 不是 ask 目标；未安装对应包时禁用此选项。",
+        richAvailableNote: "Rich 工具分屏 · 不是 ask 目标。",
         workspace: "工作区",
         provider: "Provider",
         rolePack: "角色包",
@@ -2123,7 +2123,7 @@ model = "gpt-5.5"</pre>
         sidebarWidth: "宽度",
         enabled: "启用",
         disabled: "禁用",
-        richUnavailableNote: "当前环境未安装 Rich，不能选择该分屏类型。",
+        richUnavailableNote: "未安装 Rich 工作台。仍可选择，但需运行 `ccb update rich` 安装后该分屏才会启动。",
         apiShortcutUnavailable: "该 Provider 不支持 Agent 级 API Key/URL 快捷设置。",
         profileSaved: "配置档案已保存",
         profileLoaded: "配置档案已作为未激活草稿加载",
@@ -3167,7 +3167,7 @@ main = "demo:codex"
           <span class="label">${t("paneType")}</span>
           <select class="select" data-field="paneType">
             <option value="agent" ${isTool ? "" : "selected"}>${t("agent")}</option>
-            <option value="rich" ${isRich ? "selected" : ""} ${!visualState.rich_available && !isRich ? "disabled" : ""}>Rich</option>
+            <option value="rich" ${isRich ? "selected" : ""}>Rich</option>
             <option value="shell" ${isShell ? "selected" : ""}>Shell</option>
           </select>
           <span class="field-note">${visualState.rich_available ? t("richAvailableNote") : t("richUnavailableNote")}</span>
